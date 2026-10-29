@@ -1,0 +1,9 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Both CRMs go to the same nginx, which picks the site from the Host header.
+{$NEWRAL_SITE}, {$SYNAPPSES_SITE} {
+	encode gzip
+	reverse_proxy frontend:8080
+}

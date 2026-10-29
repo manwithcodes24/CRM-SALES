@@ -1,0 +1,139 @@
+# Frappe CRM for Newral + Synappses: one stack, two separate CRM sites.
+#
+# Each brand is its own Frappe site with its own database, users, leads, pipeline
+# and WhatsApp number. nginx (the `frontend` service) picks the site from the
+# request's Host header, so crm.newral.in and crm.synappses.in never share data.
+#
+# Based on frappe/frappe_docker's pwd.yml. Settings come from .env (see .env.example).
+
+x-app: &app
+  image: ${CUSTOM_IMAGE:-newral-crm}:${CUSTOM_TAG:-16}
+  pull_policy: ${PULL_POLICY:-never}
+  restart: unless-stopped
+  networks: [crm]
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - logs:/home/frappe/frappe-bench/logs
+
+x-after-config: &after-config
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+x-redis-env: &redis-env
+  FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+  FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+
+services:
+  configurator:
+    <<: *app
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host db;
+        bench set-config -gp db_port 3306;
+        bench set-config -g redis_cache "redis://redis-cache:6379";
+        bench set-config -g redis_queue "redis://redis-queue:6379";
+        bench set-config -g redis_socketio "redis://redis-queue:6379";
+        bench set-config -gp socketio_port 9000;
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Creates both sites on first start; does nothing once they exist.
+  create-sites:
+    <<: [*app, *after-config]
+    restart: "no"
+    entrypoint: ["bash", "/scripts/create-sites.sh"]
+    environment:
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      SITES: ${NEWRAL_SITE} ${SYNAPPSES_SITE}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts:/scripts:ro
+
+  backend:
+    <<: [*app, *after-config]
+
+  frontend:
+    <<: *app
+    command: ["nginx-entrypoint.sh"]
+    depends_on: [backend, websocket]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      # Route each request to the site named by its Host header.
+      FRAPPE_SITE_NAME_HEADER: $$host
+      UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    ports:
+      # Localhost only: in production a reverse proxy (host nginx, or Caddy from
+      # compose.https.yml) faces the internet.
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+
+  websocket:
+    <<: [*app, *after-config]
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    environment: *redis-env
+
+  queue-short:
+    <<: [*app, *after-config]
+    command: ["bench", "worker", "--queue", "short,default"]
+    environment: *redis-env
+
+  queue-long:
+    <<: [*app, *after-config]
+    command: ["bench", "worker", "--queue", "long,default,short"]
+    environment: *redis-env
+
+  scheduler:
+    <<: [*app, *after-config]
+    command: ["bench", "schedule"]
+
+  db:
+    image: mariadb:11.8
+    restart: unless-stopped
+    networks: [crm]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      # The first start initialises the data directory, which can take a minute.
+      start_period: 90s
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/mysql
+
+  redis-cache:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    networks: [crm]
+
+  redis-queue:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    networks: [crm]
+    volumes:
+      - redis-queue-data:/data
+
+volumes:
+  db-data:
+  redis-queue-data:
+  sites:
+  logs:
+
+networks:
+  crm:
