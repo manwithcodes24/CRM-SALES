@@ -39,13 +39,14 @@ cd ~/CRM-SALES && git pull && sudo docker compose up -d
 
 **Restore** (overwrites the site's current data):
 ```bash
-cd ~/CRM-SALES/backups/<timestamp>     # or: aws s3 cp --recursive s3://<bucket>/crm-backups/<timestamp>/ . --endpoint-url <url>
-sudo docker compose cp . backend:/tmp/restore
-sudo docker compose exec backend bash -c 'cd /tmp/restore && bench --site salescrm.newral.in restore *-database.sql.gz \
-  --with-public-files *-files.tar --with-private-files *-private-files.tar \
-  --db-root-username root --db-root-password "$MARIADB_ROOT_PASSWORD"'
+cd ~/CRM-SALES
+B=backups/<timestamp>     # or first: aws s3 cp --recursive s3://<bucket>/crm-backups/<timestamp>/ $B --endpoint-url <url>
+sudo docker compose cp $B/. backend:/tmp/restore
+sudo docker compose exec -e DBPW="$(grep ^DB_ROOT_PASSWORD= .env | cut -d= -f2)" backend bash -c \
+  'cd /tmp/restore && bench --site salescrm.newral.in restore *-database.sql.gz \
+   --with-public-files *-files.tgz --with-private-files *-private-files.tgz \
+   --db-root-username root --db-root-password "$DBPW" && rm -rf /tmp/restore'
 ```
-(Pass the `DB_ROOT_PASSWORD` value from `.env` as the root password.)
 
 ### Fresh server
 
