@@ -1,7 +1,7 @@
 # Production add-on: Caddy in front of nginx, with automatic Let's Encrypt HTTPS
-# for both CRM domains. Use on the server:
+# for the CRM domain. Use on the server:
 #   docker compose -f compose.yml -f compose.https.yml up -d
-# Needs ports 80 and 443 open and both domains' A records pointing at the server.
+# Needs ports 80 and 443 open and the domain's A record pointing at the server.
 
 services:
   frontend:
@@ -16,8 +16,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      NEWRAL_SITE: ${NEWRAL_SITE}
-      SYNAPPSES_SITE: ${SYNAPPSES_SITE}
+      SITES: ${SITES}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

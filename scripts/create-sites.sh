@@ -1,5 +1,6 @@
 #!/bin/bash
-# Creates each site in $SITES with Frappe CRM and the WhatsApp app installed.
+# Creates each site in $SITES with Frappe CRM and the WhatsApp app installed,
+# then adds the Newral/Synappses Brand field (setup_brands.py).
 # Safe to re-run: existing sites are skipped (and get any missing app installed).
 set -euo pipefail
 
@@ -26,6 +27,7 @@ for site in $SITES; do
   for app in crm frappe_whatsapp; do
     grep -q "^$app" <<<"$installed" || bench --site "$site" install-app "$app"
   done
+  (cd sites && ../env/bin/python /scripts/setup_brands.py "$site")
 done
 
 echo "Sites ready: $SITES"

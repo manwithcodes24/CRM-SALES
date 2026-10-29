@@ -1,8 +1,9 @@
-# Frappe CRM for Newral + Synappses: one stack, two separate CRM sites.
+# Frappe CRM for Newral: one site (salescrm.newral.in) that manages both brands,
+# Newral (agency) and Synappses (LMS). Every lead and deal carries a Brand field;
+# see scripts/setup-brands.py.
 #
-# Each brand is its own Frappe site with its own database, users, leads, pipeline
-# and WhatsApp number. nginx (the `frontend` service) picks the site from the
-# request's Host header, so crm.newral.in and crm.synappses.in never share data.
+# More sites can be added later via SITES; nginx (the `frontend` service) picks the
+# site from the request's Host header.
 #
 # Based on frappe/frappe_docker's pwd.yml. Settings come from .env (see .env.example).
 
@@ -50,7 +51,7 @@ services:
     environment:
       DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
-      SITES: ${NEWRAL_SITE} ${SYNAPPSES_SITE}
+      SITES: ${SITES:?set SITES in .env}
     volumes:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
