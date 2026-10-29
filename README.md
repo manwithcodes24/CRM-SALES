@@ -35,7 +35,17 @@ cd ~/CRM-SALES && git pull && sudo docker compose up -d
 
 **Upgrade Frappe CRM** (new release): rebuild the image (`./build.sh`, ~15 min), then `sudo docker compose up -d && sudo docker compose exec backend bench --site all migrate`. If the server's GitHub downloads are slow, build on another machine and copy it over: `docker save newral-crm:16 | gzip -1 | ssh <server> 'gunzip | sudo docker load'`.
 
-**Backups:** `sudo docker compose exec backend bench --site all backup --with-files` writes to `sites/<site>/private/backups`. Copy them off the server daily (cron + `aws s3 sync` or rclone).
+**Backups:** `scripts/backup.sh` runs every night at 02:30 IST (root cron). It backs up the database and uploaded files to `~/CRM-SALES/backups/<timestamp>/` and to ACE Cloud S3 (`s3://<bucket>/crm-backups/`, settings in `backup.env`), keeping 14 days in each. The log is `backups/backup.log`. Run one now with `sudo scripts/backup.sh`.
+
+**Restore** (overwrites the site's current data):
+```bash
+cd ~/CRM-SALES/backups/<timestamp>     # or: aws s3 cp --recursive s3://<bucket>/crm-backups/<timestamp>/ . --endpoint-url <url>
+sudo docker compose cp . backend:/tmp/restore
+sudo docker compose exec backend bash -c 'cd /tmp/restore && bench --site salescrm.newral.in restore *-database.sql.gz \
+  --with-public-files *-files.tar --with-private-files *-private-files.tar \
+  --db-root-username root --db-root-password "$MARIADB_ROOT_PASSWORD"'
+```
+(Pass the `DB_ROOT_PASSWORD` value from `.env` as the root password.)
 
 ### Fresh server
 

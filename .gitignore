@@ -1,3 +1,4 @@
 .env
 backups/
 build.log
+backup.env
